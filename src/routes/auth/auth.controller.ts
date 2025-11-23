@@ -63,3 +63,65 @@ export async function adminLogin(req: Request, res: Response) {
     return res.status(500).json({ success: false, message: 'Login failed.', error: getErrorMessage(error) });
   }
 }
+
+
+export async function changePassword(req: Request, res: Response) {
+    try {
+        const { id } = req.params; // user ID from route
+        const { oldPassword, newPassword } = req.body;
+
+        // Validate input
+        if (!oldPassword || !newPassword) {
+            return res.status(400).json({
+                success: false,
+                message: "Old password and new password are required."
+            });
+        }
+
+        // Find user
+        const user = await Admin.findById(id);
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                message: "User not found."
+            });
+        }
+
+        // Check old password
+        const isMatch = await bcrypt.compare(oldPassword, user.password);
+        if (!isMatch) {
+            return res.status(403).json({
+                success: false,
+                message: "Old password is incorrect."
+            });
+        }
+
+        // Prevent reusing the same password
+        const isSamePassword = await bcrypt.compare(newPassword, user.password);
+        if (isSamePassword) {
+            return res.status(400).json({
+                success: false,
+                message: "New password cannot be the same as the old password."
+            });
+        }
+
+        // Hash new password
+        const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+        // Update password
+        user.password = hashedPassword;
+        await user.save();
+
+        return res.status(200).json({
+            success: true,
+            message: "Password changed successfully."
+        });
+
+    } catch (error) {
+        return res.status(500).json({
+            success: false,
+            message: "Failed to change password.",
+            error: getErrorMessage(error)
+        });
+    }
+}

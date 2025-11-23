@@ -35,7 +35,7 @@ export interface IPledge {
   remaining_amount: number;
   percentage_paid: number;
 
-  assigned_followup: mongoose.Types.ObjectId;
+  assigned_followup?: mongoose.Types.ObjectId;
 
   payment_history: IPaymentHistory[];
 

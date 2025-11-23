@@ -12,7 +12,7 @@ export async function sendAccountCreationEmail(userEmail: string, password: stri
 
   // Email content
   const mailOptions = {
-    from: '"NCIC Website" <no-reply@NCIC.com>', // Sender address
+    from: '"NCIC Pledge Follow-up" <no-reply@NCIC.com>', // Sender address
     to: userEmail, // List of recipients
     subject: 'Account Creation', // Subject line
     text: `${message} Your password is: ${password}`, // Plain text body

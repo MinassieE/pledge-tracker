@@ -5,6 +5,7 @@ import { Pledge } from '../../modules/pledge';
 
 import { generatePassword } from '../../../utils/passwordGenerator';
 import { sendAccountCreationEmail } from '../../../utils/emailSender';
+import mongoose from 'mongoose';
 
 function getErrorMessage(error: unknown): string {
     if (error instanceof Error) {
@@ -18,6 +19,7 @@ function getErrorMessage(error: unknown): string {
 // ------------------------
 export async function addFollowUp(req: Request, res: Response) {
     const plainPassword = generatePassword();
+
     try {
         const { first_name, middle_name, email } = req.body;
 
@@ -28,12 +30,22 @@ export async function addFollowUp(req: Request, res: Response) {
             });
         }
 
+        // ✅ Check if email already exists
+        const existingUser = await Admin.findOne({ email: email.toLowerCase() });
+
+        if (existingUser) {
+            return res.status(409).json({
+                success: false,
+                message: 'This email is already registered. Please use another email.'
+            });
+        }
+
         const hashedPassword = await bcrypt.hash(plainPassword, 10);
 
         const newFollowUp = new Admin({
             first_name,
             middle_name,
-            email,
+            email: email.toLowerCase(),
             password: hashedPassword,
             role: 'followUp'
         });
@@ -44,10 +56,14 @@ export async function addFollowUp(req: Request, res: Response) {
         await sendAccountCreationEmail(
             newFollowUp.email,
             plainPassword,
-            "Greetings, <br> You are invited to be a Follow-Up user on the NCIC Website."
+            "Greetings, <br> You are invited to be a Follow-Up user to follow up promised pledges."
         );
 
-        return res.status(201).json(newFollowUp);
+        return res.status(201).json({
+            success: true,
+            message: "Follow-up account created successfully.",
+            data: newFollowUp
+        });
 
     } catch (error) {
         return res.status(500).json({
@@ -73,6 +89,46 @@ export async function getAllFollowUps(req: Request, res: Response) {
         });
     }
 }
+
+// ------------------------
+// Get a single Follow-Up User 
+// ------------------------
+export async function getFollowUpById(req: Request, res: Response) {
+    try {
+        const { id } = req.params;
+
+        // Validate ID format
+        if (!mongoose.Types.ObjectId.isValid(id)) {
+            return res.status(400).json({
+                success: false,
+                message: "Invalid follow-up user ID."
+            });
+        }
+
+        // Find follow-up by ID
+        const followUp = await Admin.findOne({ _id: id, role: 'followUp' }).select('-password');
+
+        if (!followUp) {
+            return res.status(404).json({
+                success: false,
+                message: "Follow-up user not found."
+            });
+        }
+
+        return res.status(200).json({
+            success: true,
+            data: followUp
+        });
+
+    } catch (error) {
+        return res.status(500).json({
+            success: false,
+            message: "Failed to retrieve follow-up user.",
+            error: getErrorMessage(error)
+        });
+    }
+}
+
 
 // ------------------------
 // Update Follow-Up User Status
@@ -162,7 +218,7 @@ export async function addPledge(req: Request, res: Response) {
             promised_start_date,
             promised_end_date,
             paper_form_image,
-            assigned_followup,
+            assigned_followup: assigned_followup || undefined,
             amount_paid: 0,
             remaining_amount: promised_amount,
             percentage_paid: 0,
@@ -187,6 +243,56 @@ export async function addPledge(req: Request, res: Response) {
         });
     }
 }
+
+export async function getAllPledges(req: Request, res: Response) {
+    try {
+        const pledges = await Pledge.find()
+            .populate("assigned_followup", "first_name middle_name email role status");
+
+        return res.status(200).json({
+            success: true,
+            count: pledges.length,
+            pledges
+        });
+
+    } catch (error) {
+        return res.status(500).json({
+            success: false,
+            message: "Failed to retrieve pledges.",
+            error: getErrorMessage(error)
+        });
+    }
+}
+
+
+export async function getPledgeById(req: Request, res: Response) {
+    try {
+        const { id } = req.params;
+
+        const pledge = await Pledge.findById(id)
+            .populate("assigned_followup", "first_name middle_name email role status");
+
+        if (!pledge) {
+            return res.status(404).json({
+                success: false,
+                message: "Pledge not found."
+            });
+        }
+
+        return res.status(200).json({
+            success: true,
+            pledge
+        });
+
+    } catch (error) {
+        return res.status(500).json({
+            success: false,
+            message: "Failed to get pledge.",
+            error: getErrorMessage(error)
+        });
+    }
+}
+
 
 export async function updatePledge(req: Request, res: Response) {
   try {
@@ -277,6 +383,24 @@ export async function updatePledge(req: Request, res: Response) {
   }
 }
 
+export async function getUnassignedPledges(req: Request, res: Response) {
+    try {
+        const unassignedPledges = await Pledge.find({ assigned_followup: { $exists: false } });
+
+        return res.status(200).json({
+            success: true,
+            count: unassignedPledges.length,
+            pledges: unassignedPledges
+        });
+
+    } catch (error) {
+        return res.status(500).json({
+            success: false,
+            message: "Failed to retrieve unassigned pledges.",
+            error: getErrorMessage(error)
+        });
+    }
+}
 
 export async function assignPledgeToFollowUp(req: Request, res: Response) {
   try {
