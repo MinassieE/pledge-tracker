@@ -8,6 +8,9 @@ import { createInitialAdmin } from "./modules/createSystemAdmin";
 import authRoutes from "./routes/auth/auth.router";
 import adminRouter from "./routes/admin/admin.router";
 
+import { validateToken } from './utils/jwtAuth';
+import { authorize } from "./utils/authorize"
+
 const app: Express = express();
 
 // mongoose
@@ -37,6 +40,6 @@ app.use(bodyParser.urlencoded({ extended: true })); //To enable the submitting o
 
 app.use("/test", testRouter);
 app.use("/auth", authRoutes);
-app.use("/admin", adminRouter);
+app.use("/admin", validateToken, adminRouter);
 
 export default app

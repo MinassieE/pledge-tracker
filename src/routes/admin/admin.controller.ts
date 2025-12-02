@@ -3,8 +3,8 @@ import bcrypt from 'bcrypt';
 import { Admin } from '../../modules/admin';
 import { Pledge } from '../../modules/pledge';
 
-import { generatePassword } from '../../../utils/passwordGenerator';
-import { sendAccountCreationEmail } from '../../../utils/emailSender';
+import { generatePassword } from '../../utils/passwordGenerator';
+import { sendAccountCreationEmail } from '../../utils/emailSender';
 import mongoose from 'mongoose';
 
 function getErrorMessage(error: unknown): string {
@@ -12,6 +12,66 @@ function getErrorMessage(error: unknown): string {
       return error.message;
     }
     return String(error);
+}
+
+// ------------------------
+// Add an Admin User
+// ------------------------
+export async function addAdmin(req: Request, res: Response) {
+    const plainPassword = generatePassword();
+
+    try {
+        const { first_name, middle_name, email } = req.body;
+
+        if (!first_name || !middle_name || !email) {
+            return res.status(400).json({
+                success: false,
+                message: 'First name, middle name, and email are required.'
+            });
+        }
+
+        // ✅ Check if email already exists
+        const existingUser = await Admin.findOne({ email: email.toLowerCase() });
+
+        if (existingUser) {
+            return res.status(409).json({
+                success: false,
+                message: 'This email is already registered. Please use another email.'
+            });
+        }
+
+        const hashedPassword = await bcrypt.hash(plainPassword, 10);
+
+        const newAdmin = new Admin({
+            first_name,
+            middle_name,
+            email: email.toLowerCase(),
+            password: hashedPassword,
+            role: 'admin'
+        });
+
+        await newAdmin.save();
+
+        // Send plain password to user
+        await sendAccountCreationEmail(
+            newAdmin.email,
+            plainPassword,
+            "Greetings, <br> You are invited as an Admin user."
+        );
+
+        return res.status(201).json({
+            success: true,
+            message: "Admin account created successfully.",
+            data: newAdmin
+        });
+
+    } catch (error) {
+        return res.status(500).json({
+            success: false,
+            message: 'Admin creation failed.',
+            error: getErrorMessage(error)
+        });
+    }
 }
 
 // ------------------------
@@ -180,68 +240,117 @@ export async function updateFollowUpStatus(req: Request, res: Response) {
 // Add a Pledge
 // ------------------------
 export async function addPledge(req: Request, res: Response) {
-    try {
-        const {
-            full_name,
-            phone_number,
-            alt_phone_number,
-            email,
-            promised_amount,
-            contribution_type,
-            material_type,
-            material_quantity,
-            other_description,
-            promised_start_date,
-            promised_end_date,
-            paper_form_image,
-            assigned_followup
-        } = req.body;
+  try {
+    const {
+      full_name,
+      phone_number,
+      alt_phone_number,
+      email,
+      promised_amount,
+      contribution_type,
+      material_type,
+      material_quantity,
+      other_description,
+      promised_start_date,
+      promised_end_date,
+      paper_form_image,
+      assigned_followup
+    } = req.body;
 
-        // Validate required fields
-        if (!full_name || !phone_number || !promised_amount || !contribution_type || !promised_start_date || !promised_end_date || !paper_form_image) {
-            return res.status(400).json({
-                success: false,
-                message: 'full_name, phone_number, promised_amount, contribution_type, promised_start_date, promised_end_date, and paper_form_image are required.'
-            });
-        }
-
-        const newPledge = new Pledge({
-            full_name,
-            phone_number,
-            alt_phone_number,
-            email,
-            promised_amount,
-            contribution_type,
-            material_type,
-            material_quantity,
-            other_description,
-            promised_start_date,
-            promised_end_date,
-            paper_form_image,
-            assigned_followup: assigned_followup || undefined,
-            amount_paid: 0,
-            remaining_amount: promised_amount,
-            percentage_paid: 0,
-            status: 'notPaid',
-            payment_history: [],
-            overdue: false
-        });
-
-        const savedPledge = await newPledge.save();
-
-        return res.status(201).json({
-            success: true,
-            message: 'Pledge added successfully.',
-            pledge: savedPledge
-        });
-
-    } catch (error) {
-        return res.status(500).json({
-            success: false,
-            message: 'Failed to add pledge.',
-            error: getErrorMessage(error)
-        });
+    // Validate required fields
+    if (
+      !full_name ||
+      !phone_number ||
+      !promised_amount ||
+      !contribution_type ||
+      !promised_start_date ||
+      !promised_end_date ||
+      !paper_form_image
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "full_name, phone_number, promised_amount, contribution_type, promised_start_date, promised_end_date, and paper_form_image are required."
+      });
     }
+
+    /** ---------------------------------------
+     * MONTHLY PLEDGE CALCULATIONS
+     * --------------------------------------*/
+
+    let monthly_installment_amount: number | undefined = undefined;
+    let next_due_date: Date | undefined = undefined;
+
+    if (contribution_type === "monthly") {
+      const start = new Date(promised_start_date);
+      const end = new Date(promised_end_date);
+
+      // Calculate the number of months between start and end
+      const totalMonths =
+        (end.getFullYear() - start.getFullYear()) * 12 +
+        (end.getMonth() - start.getMonth()) +
+        1;
+
+      if (totalMonths <= 0) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid date range for monthly pledge."
+        });
+      }
+
+      monthly_installment_amount = promised_amount / totalMonths;
+
+      // First due date = start date
+      next_due_date = start;
+    }
+
+    /** ---------------------------------------
+     * CREATE NEW PLEDGE
+     * --------------------------------------*/
+
+    const newPledge = new Pledge({
+      full_name,
+      phone_number,
+      alt_phone_number,
+      email,
+      promised_amount,
+      contribution_type,
+      material_type,
+      material_quantity,
+      other_description,
+      promised_start_date,
+      promised_end_date,
+      paper_form_image,
+      assigned_followup: assigned_followup || undefined,
+
+      // Payment Stats
+      amount_paid: 0,
+      remaining_amount: promised_amount,
+      percentage_paid: 0,
+      status: "notPaid",
+
+      // Monthly Fields
+      monthly_installment_amount,
+      next_due_date,
+
+      payment_history: [],
+      overdue: false
+    });
+
+    const savedPledge = await newPledge.save();
+
+    return res.status(201).json({
+      success: true,
+      message: "Pledge added successfully.",
+      pledge: savedPledge
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Failed to add pledge.",
+      error: getErrorMessage(error)
+    });
+  }
 }
 
 export async function getAllPledges(req: Request, res: Response) {
@@ -522,6 +631,141 @@ export async function assignMultiplePledgesToFollowUp(req: Request, res: Respons
       success: false,
       message: "Failed to assign pledges.",
       error: error instanceof Error ? error.message : error
+    });
+  }
+}
+
+
+// ------------------------
+// Get all pledges assigned to the logged-in follow-up
+// ------------------------
+export async function getMyPledges(req: Request, res: Response) {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+
+    const myPledges = await Pledge.find({ assigned_followup: req.user.id });
+    return res.status(200).json({
+      success: true,
+      message: "Follow-up pledges retrieved successfully.",
+      pledges: myPledges
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Failed to retrieve pledges.",
+      error: getErrorMessage(error)
+    });
+  }
+}
+
+// ------------------------
+// Get a single pledge assigned to the logged-in follow-up
+// ------------------------
+export async function getMyPledgeById(req: Request, res: Response) {
+  try {
+    const { id } = req.params;
+
+    if (!req.user) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+
+    const pledge = await Pledge.findOne({ _id: id, assigned_followup: req.user.id });
+
+    if (!pledge) {
+      return res.status(404).json({ success: false, message: "Pledge not found or not assigned to you." });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Pledge retrieved successfully.",
+      pledge
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Failed to retrieve pledge.",
+      error: getErrorMessage(error)
+    });
+  }
+}
+
+// ------------------------
+// Update a pledge assigned to the logged-in follow-up
+// (add payment or add remark)
+// ------------------------
+export async function updateMyPledge(req: Request, res: Response) {
+  try {
+    const { id } = req.params;
+    const { payment, remark, ...updateData } = req.body;
+
+    if (!req.user) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+
+    const pledge = await Pledge.findOne({ _id: id, assigned_followup: req.user.id });
+    if (!pledge) {
+      return res.status(404).json({ success: false, message: "Pledge not found or not assigned to you." });
+    }
+
+    // Update general fields (if you want follow-ups to edit certain info)
+    const editableFields = ["alt_phone_number", "email", "material_quantity", "other_description"];
+    editableFields.forEach(field => {
+      if (updateData[field] !== undefined) {
+        (pledge as any)[field] = updateData[field];
+      }
+    });
+
+    // Add new payment if provided
+    if (payment && payment.amount && payment.amount > 0) {
+      pledge.payment_history.push({
+        amount: payment.amount,
+        method: payment.method || "unknown",
+        date: new Date()
+      });
+    }
+
+    // Add new remark if provided
+    if (remark && remark.comment) {
+      pledge.remarks.push({
+        followup_id: new mongoose.Types.ObjectId(req.user.id),
+        comment: remark.comment,
+        date: new Date()
+      });
+    }
+
+    // Recalculate totals
+    const totalPaid = pledge.payment_history.reduce((sum, p) => sum + p.amount, 0);
+    pledge.amount_paid = totalPaid;
+    pledge.remaining_amount = pledge.promised_amount - totalPaid;
+    pledge.percentage_paid = (totalPaid / pledge.promised_amount) * 100;
+
+    // Update status
+    if (pledge.remaining_amount <= 0) {
+      pledge.status = "paid";
+    } else if (totalPaid === 0) {
+      pledge.status = "notPaid";
+    } else {
+      pledge.status = "partial";
+    }
+
+    // Update overdue
+    pledge.overdue = pledge.promised_end_date < new Date() && pledge.remaining_amount > 0;
+
+    const updatedPledge = await pledge.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "Pledge updated successfully.",
+      pledge: updatedPledge
+    });
+
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Failed to update pledge.",
+      error: getErrorMessage(error)
     });
   }
 }

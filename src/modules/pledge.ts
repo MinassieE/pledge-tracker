@@ -39,6 +39,9 @@ export interface IPledge {
 
   payment_history: IPaymentHistory[];
 
+  monthly_installment_amount?: number;   // amount expected each month
+  next_due_date?: Date;                  // when the next payment is due
+  
   remarks: IRemark[]; // <-- added
 
   overdue: boolean;
@@ -91,6 +94,9 @@ const pledgeSchema = new Schema<IPledge>(
     assigned_followup: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin' },
 
     payment_history: [paymentHistorySchema],
+
+    monthly_installment_amount: { type: Number },
+    next_due_date: { type: Date },
 
     remarks: [remarkSchema], // <-- added here
 
