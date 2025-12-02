@@ -16,8 +16,19 @@ import {
     assignMultiplePledgesToFollowUp,
     getMyPledges,
     getMyPledgeById,
-    updateMyPledge
+    updateMyPledge,
+    getPledgesByFollowUp,
+    getPledgesByStatus,
+    getPledgesByContributionType,
+    getDueMonthlyPledges,
+    getOverduePledges
 } from "./admin.controller";
+
+import { 
+    getTotalCollectionStats,
+    getMonthlyCollectionReport,
+    getFollowUpPerformance
+ } from "./report/admin.report.controller";
 
 const adminRouter = express.Router();
 
@@ -35,11 +46,24 @@ adminRouter.get('/getUnassignedPledges', authorize(["superAdmin", "admin"]), get
 adminRouter.post('/assignPledgeToFollowUp', authorize(["superAdmin", "admin"]), assignPledgeToFollowUp);
 adminRouter.post('/assignMultiplePledgesToFollowUp', authorize(["superAdmin", "admin"]), assignMultiplePledgesToFollowUp);
 
+adminRouter.get('/getPledgesByFollowUp/:followUpId', authorize(["superAdmin", "admin"]), getPledgesByFollowUp);
+adminRouter.get('/getPledgesByStatus/:status', authorize(["superAdmin", "admin"]), getPledgesByStatus);
+adminRouter.get('/getPledgesByContributionType/:contributionType', authorize(["superAdmin", "admin"]), getPledgesByContributionType);
+adminRouter.get('/getDueMonthlyPledges', authorize(["superAdmin", "admin", "followUp"]), getDueMonthlyPledges); 
+adminRouter.get('/getOverduePledges', authorize(["superAdmin", "admin", "followUp"]), getOverduePledges);   
+
 // ------------------------
 // Follow-Up Endpoints
 // ------------------------
 adminRouter.get('/myPledges', authorize("followUp"), getMyPledges);
 adminRouter.get('/myPledges/:id', authorize("followUp"), getMyPledgeById);
 adminRouter.put('/myPledges/:id', authorize("followUp"), updateMyPledge);
+
+//-------------------------
+// Report Endpoints
+//-------------------------
+adminRouter.get('/reports/totalCollectionStats', authorize(["superAdmin", "admin"]), getTotalCollectionStats);
+adminRouter.get('/reports/monthlyCollectionReport/:year/:month', authorize(["superAdmin", "admin"]), getMonthlyCollectionReport);
+adminRouter.get('/reports/followUpPerformance/:id', authorize(["superAdmin", "admin"]), getFollowUpPerformance);
 
 export default adminRouter;

@@ -769,3 +769,138 @@ export async function updateMyPledge(req: Request, res: Response) {
     });
   }
 }
+
+
+export async function getPledgesByFollowUp(req: Request, res: Response) {
+  try {
+    const { followUpId } = req.params;
+
+    const followUp = await Admin.findById(followUpId);
+    if (!followUp) return res.status(404).json({ success: false, message: "Follow-Up not found." });
+    if (followUp.role !== "followUp") return res.status(400).json({ success: false, message: "User is not a follow-up." });
+
+    const pledges = await Pledge.find({ assigned_followup: followUp._id });
+
+    return res.status(200).json({
+      success: true,
+      data: pledges
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Failed to get pledges for follow-up.",
+      error: getErrorMessage(error)
+    });
+  }
+}
+
+
+
+export async function getPledgesByStatus(req: Request, res: Response) {
+  try {
+    const { status } = req.params; // "paid", "partial", "notPaid"
+    const { followUpId, contribution_type } = req.query;
+
+    if (!["paid", "partial", "notPaid"].includes(status)) {
+      return res.status(400).json({ success: false, message: "Invalid status." });
+    }
+
+    const filter: any = { status };
+
+    if (followUpId) filter.assigned_followup = followUpId;
+    if (contribution_type) filter.contribution_type = contribution_type;
+
+    const pledges = await Pledge.find(filter);
+
+    return res.status(200).json({
+      success: true,
+      data: pledges
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Failed to get pledges by status.",
+      error: getErrorMessage(error)
+    });
+  }
+}
+
+
+export async function getPledgesByContributionType(req: Request, res: Response) {
+  try {
+    const { type } = req.params; // "oneTime", "monthly", "material", "other"
+    if (!["oneTime", "monthly", "material", "other"].includes(type)) {
+      return res.status(400).json({ success: false, message: "Invalid contribution type." });
+    }
+
+    const pledges = await Pledge.find({ contribution_type: type, archived: false });
+
+    return res.status(200).json({
+      success: true,
+      data: pledges
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch pledges by contribution type.",
+      error: getErrorMessage(error)
+    });
+  }
+}
+
+
+export async function getDueMonthlyPledges(req: Request, res: Response) {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+
+    const today = new Date();
+
+    const duePledges = await Pledge.find({
+      assigned_followup: req.user.id,
+      contribution_type: "monthly",
+      next_due_date: { $lte: today },
+      archived: false
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: duePledges
+    });
+
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch due monthly pledges.",
+      error: getErrorMessage(error)
+    });
+  }
+}
+
+export async function getOverduePledges(req: Request, res: Response) {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+
+    const today = new Date();
+
+    const overduePledges = await Pledge.find({
+      assigned_followup: req.user.id,
+      overdue: true,
+      archived: false
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: overduePledges
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch overdue pledges.",
+      error: getErrorMessage(error)
+    });
+  }
+}
