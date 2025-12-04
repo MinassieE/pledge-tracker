@@ -1,6 +1,7 @@
 import express, { Express }from "express";
 import mongoose, { ConnectOptions } from "mongoose";
 import bodyParser from "body-parser";
+import cors from "cors";
 import dev from "../config/default";
 
 import testRouter from "./routes/test/test.router";
@@ -11,7 +12,15 @@ import adminRouter from "./routes/admin/admin.router";
 import { validateToken } from './utils/jwtAuth';
 import { authorize } from "./utils/authorize"
 
+
+
 const app: Express = express();
+
+app.use(cors({
+  origin: true, // Allow all origins
+  methods: ['GET', 'POST', 'PUT', 'DELETE'], // Specify allowed methods
+  credentials: true, // Include credentials in requests (optional)
+}));
 
 // mongoose
 //   .connect(dev.db.dbUrl, { useNewUrlParser: true } as ConnectOptions)
