@@ -4,28 +4,30 @@ export interface IPaymentHistory {
   amount: number;
   method?: string;
   date: Date;
+  added_by?: mongoose.Types.ObjectId; // who added the payment
 }
 
 export interface IRemark {
-  followup_id: mongoose.Types.ObjectId; // who added the remark
+  followup_id?: mongoose.Types.ObjectId; // who added the remark (optional for system remarks)
   comment: string;                     // the remark text
   date: Date;                          // when it was added
 }
 
 export interface IPledge {
   full_name: string;
-  phone_number: string;
+  phone_number?: string;
   alt_phone_number?: string;
   email?: string;
 
   promised_amount: number;
+  currency: 'ETB' | 'USD';
   contribution_type: 'oneTime' | 'monthly' | 'material' | 'other';
   material_type?: string;
   material_quantity?: number;
   other_description?: string;
 
-  promised_start_date: Date;
-  promised_end_date: Date;
+  promised_start_date?: Date;
+  promised_end_date?: Date;
 
   paper_form_image: string;
 
@@ -53,11 +55,12 @@ export interface IPledge {
 const paymentHistorySchema = new Schema<IPaymentHistory>({
   amount: { type: Number, required: true },
   method: { type: String },
-  date: { type: Date, default: Date.now }
+  date: { type: Date, default: Date.now },
+  added_by: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', required: false }
 });
 
 const remarkSchema = new Schema<IRemark>({
-  followup_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', required: true },
+  followup_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', required: false },
   comment: { type: String, required: true },
   date: { type: Date, default: Date.now }
 });
@@ -65,11 +68,12 @@ const remarkSchema = new Schema<IRemark>({
 const pledgeSchema = new Schema<IPledge>(
   {
     full_name: { type: String, required: true },
-    phone_number: { type: String, required: true },
+    phone_number: { type: String, required: false },
     alt_phone_number: { type: String },
     email: { type: String },
 
     promised_amount: { type: Number, required: true },
+    currency: { type: String, enum: ['ETB', 'USD'], default: 'ETB', required: true },
     contribution_type: {
       type: String,
       enum: ['oneTime', 'monthly', 'material', 'other'],
@@ -80,8 +84,8 @@ const pledgeSchema = new Schema<IPledge>(
     material_quantity: { type: Number },
     other_description: { type: String },
 
-    promised_start_date: { type: Date, required: true },
-    promised_end_date: { type: Date, required: true },
+    promised_start_date: { type: Date, required: false },
+    promised_end_date: { type: Date, required: false },
 
     paper_form_image: { type: String, required: true },
 

@@ -8,6 +8,7 @@ import {
     getFollowUpById,
     updateFollowUpStatus,
     addPledge,
+    bulkAddPledges,
     getAllPledges,
     getPledgeById,
     updatePledge,
@@ -21,13 +22,20 @@ import {
     getPledgesByStatus,
     getPledgesByContributionType,
     getDueMonthlyPledges,
-    getOverduePledges
+    getOverduePledges,
+    getAllAdmins,
+    getAdminById,
+    updateAdmin,
+    deleteAdmin,
+    deleteFollowUp,
+    deletePledge,
 } from "./admin.controller";
 
 import { 
     getTotalCollectionStats,
     getMonthlyCollectionReport,
-    getFollowUpPerformance
+    getFollowUpPerformance,
+    getAllFollowUpPerformance
  } from "./report/admin.report.controller";
 
 const adminRouter = express.Router();
@@ -39,6 +47,7 @@ adminRouter.get('/getAllFollowUps', authorize(["superAdmin", "admin"]), getAllFo
 adminRouter.get('/getFollowUpById/:id', authorize(["superAdmin", "admin"]), getFollowUpById);
 adminRouter.put('/updateFollowUpStatus/:id', authorize(["superAdmin", "admin"]), updateFollowUpStatus);
 adminRouter.post('/addPledge', authorize(["superAdmin", "admin"]), addPledge );
+adminRouter.post('/bulkAddPledges', authorize(["superAdmin", "admin"]), bulkAddPledges );
 adminRouter.get('/getAllPledges', authorize(["superAdmin", "admin"]), getAllPledges);
 adminRouter.get('/getPledgeById/:id', authorize(["superAdmin", "admin"]), getPledgeById);
 adminRouter.put('/updatePledge/:id', authorize(["superAdmin", "admin"]), updatePledge);
@@ -51,6 +60,16 @@ adminRouter.get('/getPledgesByStatus/:status', authorize(["superAdmin", "admin"]
 adminRouter.get('/getPledgesByContributionType/:contributionType', authorize(["superAdmin", "admin"]), getPledgesByContributionType);
 adminRouter.get('/getDueMonthlyPledges', authorize(["superAdmin", "admin", "followUp"]), getDueMonthlyPledges); 
 adminRouter.get('/getOverduePledges', authorize(["superAdmin", "admin", "followUp"]), getOverduePledges);   
+
+// Admin management (SuperAdmin only)
+adminRouter.get("/getAllAdmins", authorize("superAdmin"), getAllAdmins);
+adminRouter.get("/getAdminById/:id", authorize("superAdmin"), getAdminById);
+adminRouter.put("/updateAdmin/:id", authorize("superAdmin"), updateAdmin);
+adminRouter.delete("/deleteAdmin/:id", authorize("superAdmin"), deleteAdmin);
+
+// Follow-up & pledge deletion
+adminRouter.delete("/deleteFollowUp/:id", authorize(["superAdmin", "admin"]), deleteFollowUp);
+adminRouter.delete("/deletePledge/:id", authorize(["superAdmin", "admin"]), deletePledge);
 
 // ------------------------
 // Follow-Up Endpoints
@@ -65,5 +84,7 @@ adminRouter.put('/myPledges/:id', authorize("followUp"), updateMyPledge);
 adminRouter.get('/reports/totalCollectionStats', authorize(["superAdmin", "admin"]), getTotalCollectionStats);
 adminRouter.get('/reports/monthlyCollectionReport/:year/:month', authorize(["superAdmin", "admin"]), getMonthlyCollectionReport);
 adminRouter.get('/reports/followUpPerformance/:id', authorize(["superAdmin", "admin"]), getFollowUpPerformance);
+
+adminRouter.get("/allFollowUpPerformance", authorize(["superAdmin", "admin"]), getAllFollowUpPerformance);
 
 export default adminRouter;

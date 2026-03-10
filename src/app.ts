@@ -20,7 +20,16 @@ app.use(cors({
   origin: true, // Allow all origins
   methods: ['GET', 'POST', 'PUT', 'DELETE'], // Specify allowed methods
   credentials: true, // Include credentials in requests (optional)
+  exposedHeaders: ['Cache-Control', 'Pragma', 'Expires'],
 }));
+
+// Disable caching for API responses
+app.use((req, res, next) => {
+  res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+  res.set('Pragma', 'no-cache');
+  res.set('Expires', '0');
+  next();
+});
 
 // mongoose
 //   .connect(dev.db.dbUrl, { useNewUrlParser: true } as ConnectOptions)
@@ -44,8 +53,8 @@ mongoose
     console.log("Error while connecting to db", err);
   });
 
-app.use(bodyParser.json()); //To enable the submitting of json to this application
-app.use(bodyParser.urlencoded({ extended: true })); //To enable the submitting of urlencoded data like the get request
+app.use(bodyParser.json({ limit: '50mb' })); //To enable the submitting of json to this application
+app.use(bodyParser.urlencoded({ extended: true, limit: '50mb' })); //To enable the submitting of urlencoded data like the get request
 
 app.use("/test", testRouter);
 app.use("/auth", authRoutes);
