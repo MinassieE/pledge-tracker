@@ -66,11 +66,16 @@ export class EmailNotificationService {
   constructor() {
     // Initialize nodemailer transporter with Gmail SMTP
     this.transporter = nodemailer.createTransport({
-      service: 'gmail',
+      host: 'smtp.gmail.com',
+      port: 587,
+      secure: false, // use TLS
       auth: {
         user: process.env.SMTP_USER,
         pass: process.env.SMTP_PASS,
       },
+      tls: {
+        rejectUnauthorized: false
+      }
     });
 
     // Default login URL (can be overridden in method calls)
