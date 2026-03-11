@@ -2,7 +2,7 @@ import express, { Express }from "express";
 import mongoose, { ConnectOptions } from "mongoose";
 import bodyParser from "body-parser";
 import cors from "cors";
-import dev from "../config/default";
+import dev from "./config/default";
 
 import testRouter from "./routes/test/test.router";
 import { createInitialAdmin } from "./modules/createSystemAdmin";
