@@ -476,15 +476,12 @@ export async function getAllPledges(req: Request, res: Response) {
 // Bulk Add Pledges (All-or-Nothing)
 // ------------------------
 export async function bulkAddPledges(req: Request, res: Response) {
-  const session = await mongoose.startSession();
-  session.startTransaction();
-
+  let session: mongoose.ClientSession | null = null;
+  
   try {
     const { pledges, project_id } = req.body;
 
     if (!pledges || !Array.isArray(pledges) || pledges.length === 0) {
-      await session.abortTransaction();
-      session.endSession();
       return res.status(400).json({
         success: false,
         message: "Pledges array is required and must not be empty."
@@ -493,8 +490,6 @@ export async function bulkAddPledges(req: Request, res: Response) {
 
     // Validate project_id is provided
     if (!project_id) {
-      await session.abortTransaction();
-      session.endSession();
       return res.status(400).json({
         success: false,
         message: "project_id is required for bulk import."
@@ -503,8 +498,6 @@ export async function bulkAddPledges(req: Request, res: Response) {
 
     // Validate project_id format
     if (!mongoose.Types.ObjectId.isValid(project_id)) {
-      await session.abortTransaction();
-      session.endSession();
       return res.status(400).json({
         success: false,
         message: "Invalid project ID format."
@@ -514,8 +507,6 @@ export async function bulkAddPledges(req: Request, res: Response) {
     // Check that the project exists
     const project = await Project.findById(project_id);
     if (!project) {
-      await session.abortTransaction();
-      session.endSession();
       return res.status(404).json({
         success: false,
         message: "Project not found."
@@ -524,8 +515,6 @@ export async function bulkAddPledges(req: Request, res: Response) {
 
     // Check that the project status is 'active'
     if (project.status !== 'active') {
-      await session.abortTransaction();
-      session.endSession();
       return res.status(403).json({
         success: false,
         message: `Cannot create pledges for ${project.status} projects.`
@@ -535,8 +524,6 @@ export async function bulkAddPledges(req: Request, res: Response) {
     // Verify user has access to this project (unless super admin)
     if (req.userRole !== 'superAdmin') {
       if (!req.user || !req.user.id) {
-        await session.abortTransaction();
-        session.endSession();
         return res.status(401).json({
           success: false,
           message: "Authentication required."
@@ -549,14 +536,16 @@ export async function bulkAddPledges(req: Request, res: Response) {
       });
 
       if (!assignment) {
-        await session.abortTransaction();
-        session.endSession();
         return res.status(403).json({
           success: false,
           message: "You do not have access to this project."
         });
       }
     }
+
+    // Start session with retry logic
+    session = await mongoose.startSession();
+    session.startTransaction();
 
     const createdPledges = [];
 
@@ -711,8 +700,14 @@ export async function bulkAddPledges(req: Request, res: Response) {
     });
 
   } catch (error) {
-    await session.abortTransaction();
-    session.endSession();
+    if (session) {
+      try {
+        await session.abortTransaction();
+      } catch (abortError) {
+        console.error('Error aborting transaction:', abortError);
+      }
+      session.endSession();
+    }
     
     // Log the detailed error for debugging
     console.error('Bulk import error:', error);
