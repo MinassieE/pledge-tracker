@@ -39,29 +39,48 @@ export class ProjectService {
   }
 
   /**
-   * Get projects with role-based filtering
+   * Get projects with role-based filtering and real-time statistics
    * - Super admins see all projects
    * - Other users see only projects they're assigned to
+   * - Returns projects with calculated collection percentages
    * 
    * Requirements: 1.7, 9.1, 9.2, 9.3
    */
-  async getProjects(userId: string, userRole: string): Promise<IProject[]> {
+  async getProjects(userId: string, userRole: string): Promise<any[]> {
+    let projects: any[];
+    
     // Super admins see all projects
     if (userRole === 'superAdmin') {
-      return await Project.find().sort({ created_at: -1 });
+      projects = await Project.find().sort({ created_at: -1 }).lean();
+    } else {
+      // For admins and follow-up users, find their assigned projects
+      const assignments = await ProjectAssignment.find({ 
+        user_id: new mongoose.Types.ObjectId(userId) 
+      });
+
+      const projectIds = assignments.map(assignment => assignment.project_id);
+
+      // Return only projects the user is assigned to
+      projects = await Project.find({ 
+        _id: { $in: projectIds } 
+      }).sort({ created_at: -1 }).lean();
     }
 
-    // For admins and follow-up users, find their assigned projects
-    const assignments = await ProjectAssignment.find({ 
-      user_id: new mongoose.Types.ObjectId(userId) 
-    });
+    // Calculate real-time statistics for each project
+    const projectsWithStats = await Promise.all(
+      projects.map(async (project) => {
+        const stats = await this.calculateProjectTotals(project._id.toString());
+        
+        return {
+          ...project,
+          total_promised_amount: stats.total_promised_amount,
+          total_collected_amount: stats.total_collected_amount,
+          collection_percentage: stats.collection_percentage
+        };
+      })
+    );
 
-    const projectIds = assignments.map(assignment => assignment.project_id);
-
-    // Return only projects the user is assigned to
-    return await Project.find({ 
-      _id: { $in: projectIds } 
-    }).sort({ created_at: -1 });
+    return projectsWithStats;
   }
 
   /**
@@ -104,40 +123,44 @@ export class ProjectService {
 
   /**
    * Calculate and return project financial totals
-   * Sums pledge amounts and payment amounts for a specific project
+   * Sums pledge amounts and collected amounts for a specific project
+   * Uses amount_paid field which is already calculated per pledge
    * 
    * Requirements: 1.8, 1.9
    */
   async calculateProjectTotals(projectId: string): Promise<{
     total_promised_amount: number;
     total_collected_amount: number;
+    collection_percentage: number;
   }> {
     const projectObjectId = new mongoose.Types.ObjectId(projectId);
 
-    // Get all pledges for this project
-    const pledges = await Pledge.find({ project_id: projectObjectId });
-
-    // Sum all promised amounts
-    const total_promised_amount = pledges.reduce(
-      (sum, pledge) => sum + pledge.promised_amount,
-      0
-    );
-
-    // Sum all payment amounts from payment_history
-    const total_collected_amount = pledges.reduce(
-      (sum, pledge) => {
-        const pledgePayments = pledge.payment_history.reduce(
-          (paymentSum, payment) => paymentSum + payment.amount,
-          0
-        );
-        return sum + pledgePayments;
+    // Aggregate totals directly from pledges
+    const result = await Pledge.aggregate([
+      {
+        $match: { project_id: projectObjectId }
       },
-      0
-    );
+      {
+        $group: {
+          _id: null,
+          total_promised: { $sum: '$promised_amount' },
+          total_collected: { $sum: '$amount_paid' }
+        }
+      }
+    ]);
+
+    const total_promised_amount = result.length > 0 ? result[0].total_promised : 0;
+    const total_collected_amount = result.length > 0 ? result[0].total_collected : 0;
+    
+    // Calculate collection percentage
+    const collection_percentage = total_promised_amount > 0 
+      ? Math.round((total_collected_amount / total_promised_amount) * 100) 
+      : 0;
 
     return {
       total_promised_amount,
-      total_collected_amount
+      total_collected_amount,
+      collection_percentage
     };
   }
 
