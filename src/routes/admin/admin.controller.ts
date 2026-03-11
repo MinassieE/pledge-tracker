@@ -6,7 +6,7 @@ import { Project } from '../../modules/Project';
 import { ProjectAssignment } from '../../modules/ProjectAssignment';
 
 import { generatePassword } from '../../utils/passwordGenerator';
-import { sendAccountCreationEmail } from '../../utils/emailSender';
+import { emailNotificationService } from '../../services/EmailNotificationService';
 import mongoose from 'mongoose';
 
 function getErrorMessage(error: unknown): string {
@@ -54,12 +54,16 @@ export async function addAdmin(req: Request, res: Response) {
 
         await newAdmin.save();
 
-        // Send plain password to user
-        await sendAccountCreationEmail(
-            newAdmin.email,
-            plainPassword,
-            "Greetings, <br> You are invited as an Admin user."
-        );
+        // Send account creation email with password and login link
+        const loginUrl = `${process.env.FRONTEND_URL || 'http://localhost:8080'}/login`;
+        await emailNotificationService.sendAccountCreationEmail({
+            email: newAdmin.email,
+            password: plainPassword,
+            firstName: newAdmin.first_name,
+            middleName: newAdmin.middle_name,
+            role: 'admin',
+            loginUrl
+        });
 
         return res.status(201).json({
             success: true,
@@ -114,12 +118,16 @@ export async function addFollowUp(req: Request, res: Response) {
 
         await newFollowUp.save();
 
-        // Send plain password to user
-        await sendAccountCreationEmail(
-            newFollowUp.email,
-            plainPassword,
-            "Greetings, <br> You are invited to be a Follow-Up user to follow up promised pledges."
-        );
+        // Send account creation email with password and login link
+        const loginUrl = `${process.env.FRONTEND_URL || 'http://localhost:8080'}/login`;
+        await emailNotificationService.sendAccountCreationEmail({
+            email: newFollowUp.email,
+            password: plainPassword,
+            firstName: newFollowUp.first_name,
+            middleName: newFollowUp.middle_name,
+            role: 'followUp',
+            loginUrl
+        });
 
         return res.status(201).json({
             success: true,
