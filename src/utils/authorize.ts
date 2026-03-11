@@ -10,7 +10,11 @@ export function authorize(rolesRequired: string[] | string) {
     if (req.userRole && roles.includes(req.userRole)) {
       next(); // User is authorized, proceed
     } else {
-      res.status(401).json({ success: false, error: "Unauthorized" });
+      res.status(403).json({ 
+        success: false, 
+        message: "You do not have permission to perform this action.",
+        error: "Forbidden" 
+      });
     }
   };
 }

@@ -1,0 +1,41 @@
+services:
+  - type: web
+    name: pledge-tracker-backend
+    env: node
+    region: oregon
+    plan: free
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DB_NAME
+        sync: false
+      - key: MONGO_USERNAME
+        sync: false
+      - key: MONGO_PASSWORD
+        sync: false
+      - key: DB_URL
+        sync: false
+      - key: AdminFirstName
+        sync: false
+      - key: AdminMiddleName
+        sync: false
+      - key: AdminLastName
+        sync: false
+      - key: AdminEmail
+        sync: false
+      - key: AdminPassword
+        sync: false
+      - key: BASE_URL
+        sync: false
+      - key: FRONTEND_URL
+        sync: false
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: JWT_EXPIRES_IN
+        value: 1d

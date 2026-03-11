@@ -2,8 +2,8 @@ import { Request, Response } from 'express';
 import bcrypt from 'bcrypt';
 import { Admin } from '../../modules/admin';
 import { Pledge } from '../../modules/pledge';
-
-
+import { Project } from '../../modules/Project';
+import { ProjectAssignment } from '../../modules/ProjectAssignment';
 
 import { generatePassword } from '../../utils/passwordGenerator';
 import { sendAccountCreationEmail } from '../../utils/emailSender';
@@ -138,9 +138,40 @@ export async function addFollowUp(req: Request, res: Response) {
 
 // ------------------------
 // Get All Follow-Up Users
+// Query params:
+// - project_id: (optional) Filter by specific project
+// - all: (optional) If 'true', returns all follow-ups without project filtering (for management pages)
 // ------------------------
 export async function getAllFollowUps(req: Request, res: Response) {
     try {
+        const projectId = req.query.project_id as string;
+        const fetchAll = req.query.all === 'true';
+        
+        // If 'all' flag is set, return all follow-ups without filtering (for management pages)
+        if (fetchAll) {
+            const followUps = await Admin.find({ role: 'followUp' }).select('-password');
+            return res.status(200).json({ success: true, data: followUps });
+        }
+        
+        // If project_id is provided, filter by project assignment
+        if (projectId) {
+            // Find all user IDs assigned to this project
+            const assignments = await ProjectAssignment.find({
+                project_id: new mongoose.Types.ObjectId(projectId)
+            });
+            
+            const assignedUserIds = assignments.map(a => a.user_id);
+            
+            // Get follow-up users who are assigned to this project
+            const followUps = await Admin.find({
+                role: 'followUp',
+                _id: { $in: assignedUserIds }
+            }).select('-password');
+            
+            return res.status(200).json({ success: true, data: followUps });
+        }
+        
+        // If no project_id and no 'all' flag, return all follow-ups (for super admin)
         const followUps = await Admin.find({ role: 'followUp' }).select('-password');
         return res.status(200).json({ success: true, data: followUps });
     } catch (error) {
@@ -257,20 +288,69 @@ export async function addPledge(req: Request, res: Response) {
       promised_start_date,
       promised_end_date,
       paper_form_image,
-      assigned_followup
+      assigned_followup,
+      project_id
     } = req.body;
 
     // Validate required fields
     if (
       !full_name ||
       promised_amount === undefined ||
-      !contribution_type
+      !contribution_type ||
+      !project_id
     ) {
       return res.status(400).json({
         success: false,
         message:
-          "full_name, promised_amount, and contribution_type are required."
+          "full_name, promised_amount, contribution_type, and project_id are required."
       });
+    }
+
+    // Validate project_id format
+    if (!mongoose.Types.ObjectId.isValid(project_id)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid project ID format."
+      });
+    }
+
+    // Check that the project exists
+    const project = await Project.findById(project_id);
+    if (!project) {
+      return res.status(404).json({
+        success: false,
+        message: "Project not found."
+      });
+    }
+
+    // Check that the project status is 'active'
+    if (project.status !== 'active') {
+      return res.status(403).json({
+        success: false,
+        message: `Cannot create pledges for ${project.status} projects.`
+      });
+    }
+
+    // Verify user has access to this project (unless super admin)
+    if (req.userRole !== 'superAdmin') {
+      if (!req.user || !req.user.id) {
+        return res.status(401).json({
+          success: false,
+          message: "Authentication required."
+        });
+      }
+
+      const assignment = await ProjectAssignment.findOne({
+        user_id: new mongoose.Types.ObjectId(req.user.id),
+        project_id: new mongoose.Types.ObjectId(project_id)
+      });
+
+      if (!assignment) {
+        return res.status(403).json({
+          success: false,
+          message: "You do not have access to this project."
+        });
+      }
     }
 
     // Use default dates if not provided
@@ -329,6 +409,7 @@ export async function addPledge(req: Request, res: Response) {
       promised_end_date: endDate,
       paper_form_image: paper_form_image || 'default_form.png',
       assigned_followup: assigned_followup || undefined,
+      project_id: new mongoose.Types.ObjectId(project_id),
 
       // Payment Stats
       amount_paid: 0,
@@ -362,7 +443,10 @@ export async function addPledge(req: Request, res: Response) {
 
 export async function getAllPledges(req: Request, res: Response) {
     try {
-        const pledges = await Pledge.find()
+        // Merge projectFilter from middleware with query
+        const filter = { ...req.projectFilter };
+        
+        const pledges = await Pledge.find(filter)
             .populate("assigned_followup", "first_name middle_name email role status");
 
         return res.status(200).json({
@@ -388,13 +472,82 @@ export async function bulkAddPledges(req: Request, res: Response) {
   session.startTransaction();
 
   try {
-    const { pledges } = req.body;
+    const { pledges, project_id } = req.body;
 
     if (!pledges || !Array.isArray(pledges) || pledges.length === 0) {
+      await session.abortTransaction();
+      session.endSession();
       return res.status(400).json({
         success: false,
         message: "Pledges array is required and must not be empty."
       });
+    }
+
+    // Validate project_id is provided
+    if (!project_id) {
+      await session.abortTransaction();
+      session.endSession();
+      return res.status(400).json({
+        success: false,
+        message: "project_id is required for bulk import."
+      });
+    }
+
+    // Validate project_id format
+    if (!mongoose.Types.ObjectId.isValid(project_id)) {
+      await session.abortTransaction();
+      session.endSession();
+      return res.status(400).json({
+        success: false,
+        message: "Invalid project ID format."
+      });
+    }
+
+    // Check that the project exists
+    const project = await Project.findById(project_id);
+    if (!project) {
+      await session.abortTransaction();
+      session.endSession();
+      return res.status(404).json({
+        success: false,
+        message: "Project not found."
+      });
+    }
+
+    // Check that the project status is 'active'
+    if (project.status !== 'active') {
+      await session.abortTransaction();
+      session.endSession();
+      return res.status(403).json({
+        success: false,
+        message: `Cannot create pledges for ${project.status} projects.`
+      });
+    }
+
+    // Verify user has access to this project (unless super admin)
+    if (req.userRole !== 'superAdmin') {
+      if (!req.user || !req.user.id) {
+        await session.abortTransaction();
+        session.endSession();
+        return res.status(401).json({
+          success: false,
+          message: "Authentication required."
+        });
+      }
+
+      const assignment = await ProjectAssignment.findOne({
+        user_id: new mongoose.Types.ObjectId(req.user.id),
+        project_id: new mongoose.Types.ObjectId(project_id)
+      });
+
+      if (!assignment) {
+        await session.abortTransaction();
+        session.endSession();
+        return res.status(403).json({
+          success: false,
+          message: "You do not have access to this project."
+        });
+      }
     }
 
     const createdPledges = [];
@@ -532,7 +685,8 @@ export async function bulkAddPledges(req: Request, res: Response) {
         next_due_date,
         payment_history: paymentHistory,
         remarks: remarks,
-        overdue: false
+        overdue: false,
+        project_id: new mongoose.Types.ObjectId(project_id) // Associate with selected project
       });
 
       const savedPledge = await newPledge.save({ session });
@@ -696,7 +850,13 @@ export async function updatePledge(req: Request, res: Response) {
 
 export async function getUnassignedPledges(req: Request, res: Response) {
     try {
-        const unassignedPledges = await Pledge.find({ assigned_followup: { $exists: false } });
+        // Merge projectFilter from middleware with unassigned filter
+        const filter = { 
+            ...req.projectFilter,
+            assigned_followup: { $exists: false } 
+        };
+        
+        const unassignedPledges = await Pledge.find(filter);
 
         return res.status(200).json({
             success: true,
@@ -991,7 +1151,13 @@ export async function getPledgesByFollowUp(req: Request, res: Response) {
     if (!followUp) return res.status(404).json({ success: false, message: "Follow-Up not found." });
     if (followUp.role !== "followUp") return res.status(400).json({ success: false, message: "User is not a follow-up." });
 
-    const pledges = await Pledge.find({ assigned_followup: followUp._id });
+    // Merge projectFilter from middleware with followUp filter
+    const filter = { 
+      ...req.projectFilter,
+      assigned_followup: followUp._id 
+    };
+    
+    const pledges = await Pledge.find(filter);
 
     return res.status(200).json({
       success: true,
@@ -1017,7 +1183,11 @@ export async function getPledgesByStatus(req: Request, res: Response) {
       return res.status(400).json({ success: false, message: "Invalid status." });
     }
 
-    const filter: any = { status };
+    // Start with projectFilter from middleware
+    const filter: any = { 
+      ...req.projectFilter,
+      status 
+    };
 
     if (followUpId) filter.assigned_followup = followUpId;
     if (contribution_type) filter.contribution_type = contribution_type;
@@ -1046,7 +1216,13 @@ export async function getPledgesByContributionType(req: Request, res: Response) 
       return res.status(400).json({ success: false, message: "Invalid contribution type." });
     }
 
-    const pledges = await Pledge.find({ contribution_type: type });
+    // Merge projectFilter from middleware with contribution_type filter
+    const filter = { 
+      ...req.projectFilter,
+      contribution_type: type 
+    };
+    
+    const pledges = await Pledge.find(filter);
 
     return res.status(200).json({
       success: true,
@@ -1071,8 +1247,9 @@ export async function getDueMonthlyPledges(req: Request, res: Response) {
     const today = new Date();
     const userRole = req.userRole;
 
-    // Build query based on user role
+    // Start with projectFilter from middleware
     const query: any = {
+      ...req.projectFilter,
       contribution_type: "monthly",
       next_due_date: { $lte: today },
       remaining_amount: { $gt: 0 }
@@ -1082,7 +1259,7 @@ export async function getDueMonthlyPledges(req: Request, res: Response) {
     if (userRole === "followUp") {
       query.assigned_followup = new mongoose.Types.ObjectId(req.user.id);
     }
-    // Admin and superAdmin see all due monthly pledges
+    // Admin and superAdmin see all due monthly pledges (filtered by project)
 
     const duePledges = await Pledge.find(query).sort({ next_due_date: 1 });
 
@@ -1110,8 +1287,9 @@ export async function getOverduePledges(req: Request, res: Response) {
     const today = new Date();
     const userRole = req.userRole;
 
-    // Build query based on user role
+    // Start with projectFilter from middleware
     const query: any = {
+      ...req.projectFilter,
       promised_end_date: { $lt: today },
       remaining_amount: { $gt: 0 }
     };
@@ -1120,7 +1298,7 @@ export async function getOverduePledges(req: Request, res: Response) {
     if (userRole === "followUp") {
       query.assigned_followup = new mongoose.Types.ObjectId(req.user.id);
     }
-    // Admin and superAdmin see all overdue pledges
+    // Admin and superAdmin see all overdue pledges (filtered by project)
 
     const overduePledges = await Pledge.find(query).sort({ promised_end_date: 1 });
 
@@ -1142,9 +1320,48 @@ export async function getOverduePledges(req: Request, res: Response) {
 
 /**
  * GET /admin/getAllAdmins
+ * Query params:
+ * - project_id: (optional) Filter by specific project
+ * - all: (optional) If 'true', returns all admins without project filtering (for management pages)
  */
 export async function getAllAdmins(req: Request, res: Response) {
   try {
+    const projectId = req.query.project_id as string;
+    const fetchAll = req.query.all === 'true';
+    
+    // If 'all' flag is set, return all admins without filtering (for management pages)
+    if (fetchAll) {
+      const admins = await Admin.find({ role: { $in: ["admin", "superAdmin"] } }).select("-password");
+      return res.status(200).json({
+        success: true,
+        count: admins.length,
+        data: admins,
+      });
+    }
+    
+    // If project_id is provided, filter by project assignment
+    if (projectId) {
+      // Find all user IDs assigned to this project
+      const assignments = await ProjectAssignment.find({
+        project_id: new mongoose.Types.ObjectId(projectId)
+      });
+      
+      const assignedUserIds = assignments.map(a => a.user_id);
+      
+      // Get admins who are assigned to this project
+      const admins = await Admin.find({
+        role: { $in: ["admin", "superAdmin"] },
+        _id: { $in: assignedUserIds }
+      }).select("-password");
+      
+      return res.status(200).json({
+        success: true,
+        count: admins.length,
+        data: admins,
+      });
+    }
+    
+    // If no project_id and no 'all' flag, return all admins (for super admin)
     const admins = await Admin.find({ role: { $in: ["admin", "superAdmin"] } }).select("-password");
 
     res.status(200).json({
@@ -1190,9 +1407,24 @@ export async function getAdminById(req: Request, res: Response) {
  */
 export async function updateAdmin(req: Request, res: Response) {
   try {
+    const adminId = req.params.id;
+    const updateData = req.body;
+    
+    // Check if trying to deactivate a super admin
+    if (updateData.status === 'inactive') {
+      const admin = await Admin.findById(adminId);
+      
+      if (admin && admin.role === 'superAdmin') {
+        return res.status(403).json({
+          success: false,
+          message: 'Cannot deactivate a Super Admin account.'
+        });
+      }
+    }
+    
     const updatedAdmin = await Admin.findByIdAndUpdate(
-      req.params.id,
-      req.body,
+      adminId,
+      updateData,
       { new: true, runValidators: true }
     ).select("-password");
 
@@ -1296,6 +1528,66 @@ export async function deletePledge(req: Request, res: Response) {
       success: false,
       message: "Failed to delete pledge",
       error: getErrorMessage(error)
+    });
+  }
+}
+
+/**
+ * Unassign pledge from follow-up user
+ * Allows super admin/admin to remove pledge assignment so it can be reassigned
+ */
+export async function unassignPledgeFromFollowUp(req: Request, res: Response) {
+  try {
+    const { pledgeId } = req.body;
+
+    if (!pledgeId) {
+      return res.status(400).json({ 
+        success: false, 
+        message: "pledgeId is required." 
+      });
+    }
+
+    // Find the pledge
+    const pledge = await Pledge.findById(pledgeId);
+    if (!pledge) {
+      return res.status(404).json({ 
+        success: false, 
+        message: "Pledge not found." 
+      });
+    }
+
+    // Check if pledge is assigned to a follow-up
+    if (!pledge.assigned_followup) {
+      return res.status(400).json({ 
+        success: false, 
+        message: "Pledge is not assigned to any follow-up." 
+      });
+    }
+
+    const followUpId = pledge.assigned_followup;
+
+    // Remove pledge from follow-up's assigned_pledges array
+    await Admin.findByIdAndUpdate(
+      followUpId,
+      { $pull: { assigned_pledges: pledge._id } }
+    );
+
+    // Remove follow-up assignment from pledge
+    pledge.assigned_followup = undefined;
+    await pledge.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "Pledge unassigned from follow-up successfully.",
+      pledge
+    });
+
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to unassign pledge.",
+      error: error instanceof Error ? error.message : error
     });
   }
 }
