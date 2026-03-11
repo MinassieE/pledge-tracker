@@ -48,6 +48,8 @@ export interface IPledge {
 
   overdue: boolean;
 
+  project_id: mongoose.Types.ObjectId; // Reference to Project
+
   created_at: Date;
   updated_at: Date;
 }
@@ -104,9 +106,15 @@ const pledgeSchema = new Schema<IPledge>(
 
     remarks: [remarkSchema], // <-- added here
 
-    overdue: { type: Boolean, default: false }
+    overdue: { type: Boolean, default: false },
+
+    project_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Project', required: true }
   },
   { timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' } }
 );
+
+// Indexes for efficient project-based queries
+pledgeSchema.index({ project_id: 1, status: 1 });
+pledgeSchema.index({ project_id: 1, created_at: -1 });
 
 export const Pledge: Model<IPledge> = mongoose.model<IPledge>('Pledge', pledgeSchema);

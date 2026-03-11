@@ -16,7 +16,9 @@ function getErrorMessage(error: unknown): string {
 
 export async function getTotalCollectionStats(req: Request, res: Response) {
   try {
-    const pledges = await Pledge.find({});
+    // Use projectFilter from pledgeFiltering middleware
+    const projectFilter = (req as any).projectFilter || {};
+    const pledges = await Pledge.find(projectFilter);
 
     // Separate ETB and USD calculations
     const etbPledges = pledges.filter(p => p.currency === 'ETB' || !p.currency);
@@ -70,7 +72,10 @@ export async function getMonthlyCollectionReport(req: Request, res: Response) {
     const start = new Date(parseInt(year), parseInt(month) - 1, 1);
     const end = new Date(parseInt(year), parseInt(month), 0, 23, 59, 59);
 
+    // Use projectFilter from pledgeFiltering middleware
+    const projectFilter = (req as any).projectFilter || {};
     const pledges = await Pledge.find({
+      ...projectFilter,
       "payment_history.date": { $gte: start, $lte: end }
     });
 
@@ -100,7 +105,12 @@ export async function getFollowUpPerformance(req: Request, res: Response) {
   try {
     const { id } = req.params;
 
-    const pledges = await Pledge.find({ assigned_followup: id });
+    // Use projectFilter from pledgeFiltering middleware
+    const projectFilter = (req as any).projectFilter || {};
+    const pledges = await Pledge.find({ 
+      ...projectFilter,
+      assigned_followup: id 
+    });
 
     const totalAssigned = pledges.length;
     const collected = pledges.filter(p => p.status === "paid").length;
@@ -128,9 +138,22 @@ export async function getFollowUpPerformance(req: Request, res: Response) {
 
 export async function getAllFollowUpPerformance(req: Request, res: Response) {
   try {
+    // Use projectFilter from pledgeFiltering middleware
+    const projectFilter = (req as any).projectFilter || {};
+    
+    // Build match stage with project filter
+    const matchStage: any = { 
+      assigned_followup: { $exists: true, $ne: null }
+    };
+    
+    // Add project_id filter if it exists
+    if (projectFilter.project_id) {
+      matchStage.project_id = projectFilter.project_id;
+    }
+    
     const performance = await Pledge.aggregate([
       {
-        $match: { assigned_followup: { $exists: true, $ne: null } }
+        $match: matchStage
       },
       {
         $group: {

@@ -8,6 +8,7 @@ import testRouter from "./routes/test/test.router";
 import { createInitialAdmin } from "./modules/createSystemAdmin";
 import authRoutes from "./routes/auth/auth.router";
 import adminRouter from "./routes/admin/admin.router";
+import projectRouter from "./routes/projects";
 
 import { validateToken } from './utils/jwtAuth';
 import { authorize } from "./utils/authorize"
@@ -59,5 +60,6 @@ app.use(bodyParser.urlencoded({ extended: true, limit: '50mb' })); //To enable t
 app.use("/test", testRouter);
 app.use("/auth", authRoutes);
 app.use("/admin", validateToken, adminRouter);
+app.use("/api/projects", validateToken, projectRouter);
 
 export default app

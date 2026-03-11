@@ -1,5 +1,6 @@
 import jwt from "jsonwebtoken";
 import { Request, Response, NextFunction } from "express";
+import { Admin } from "../modules/admin";
 
 function getErrorMessage(error: unknown): string {
   if (error instanceof Error) {
@@ -46,7 +47,7 @@ export const createTokens = (user: { email: string; id: string; role: string }) 
 };
 
 // Validate JWT tokens
-export const validateToken = (
+export const validateToken = async (
   req: Request,
   res: Response,
   next: NextFunction
@@ -68,6 +69,17 @@ export const validateToken = (
 
   try {
     const decoded = jwt.verify(token, secret) as DecodedToken;
+
+    // Check if user still exists and is active
+    const user = await Admin.findById(decoded.id).select('status');
+    
+    if (!user) {
+      return res.status(401).json({ success: false, error: "User not found" });
+    }
+    
+    if (user.status === 'inactive') {
+      return res.status(403).json({ success: false, error: "Account is deactivated. Please contact your administrator." });
+    }
 
     // Attach decoded data to req
     req.user = decoded;
