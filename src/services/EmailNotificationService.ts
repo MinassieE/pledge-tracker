@@ -78,8 +78,8 @@ export class EmailNotificationService {
       }
     });
 
-    // Default login URL (can be overridden in method calls)
-    this.defaultLoginUrl = process.env.APP_URL || 'http://localhost:3000/login';
+    // Default login URL from FRONTEND_URL environment variable
+    this.defaultLoginUrl = `${process.env.FRONTEND_URL || 'http://localhost:8080'}/login`;
   }
 
   /**
